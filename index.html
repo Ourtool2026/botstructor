@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Botstructor — build robots with your AI tutor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@200;300;400;500;600;700;800&family=Geist+Mono:wght@400;500;600&family=Hind+Siliguri:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div id="auth"></div>
+<div class="shell">
+  <aside class="side" id="side">
+    <div class="wsw" id="wsw"></div>
+    <div class="wmenu hidden" id="wmenu"></div>
+    <nav id="nav"></nav>
+    <div class="side-foot">
+      <div class="seg" id="langSeg"><button data-l="en" class="on">English</button><button data-l="bn" class="bn">বাংলা</button></div>
+      <div class="ai" id="aiState"><span class="adot"></span><span id="aiTxt">AI</span></div>
+    </div>
+  </aside>
+  <div class="main">
+    <header class="top">
+      <button class="icon-btn" id="sideTgl" title="Toggle sidebar"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg></button>
+      <div class="crumbs" id="crumbs"></div>
+      <div class="tools">
+        <div class="pace" id="paceChip" title="Instructor adapts the number of steps to your pace"><span class="pdot"></span><span class="mono">PACE</span><span id="paceTxt">Steady</span></div>
+        <button class="tgl" id="voiceTgl" title="Instructor reads each step aloud"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/></svg><span>Voice</span></button>
+        <button class="tgl" id="agTgl" title="Show or hide Ask Instructor"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="8" width="16" height="12" rx="3"/><path d="M12 4v4M9 13h.01M15 13h.01"/></svg><span>Ask Instructor</span></button>
+      </div>
+    </header>
+    <div class="content">
+      <main id="app" class="page"></main>
+      <div id="agentHome">
+        <aside class="agent" id="agent">
+          <div class="ag-head"><div class="ag-ava bot-ava"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#1a0d00" stroke-width="2" stroke-linecap="round"><rect x="4" y="8" width="16" height="12" rx="4"/><path d="M12 4v4M9 13.5h.01M15 13.5h.01M9.5 17h5"/></svg><span class="ring"></span></div><div style="flex:1;min-width:0"><div class="ag-name">Ask Instructor</div><div class="ag-sub" id="agSub">Your AI robotics agent</div></div><button class="talkbtn" data-talk title="Voice chat with Instructor"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg> Voice chat</button></div>
+          <div class="ag-log" id="agLog"></div>
+          <div class="ag-quick" id="agQuick"></div>
+          <div class="ag-in"><button class="mic" id="agMic" title="Talk to Instructor"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></button><input id="agText" placeholder="Ask anything, in English or বাংলা…"><button class="send" id="agSend">↑</button></div>
+        </aside>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="kpal hidden" id="kpal"><div class="kbox"><div class="kin"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="kq" placeholder="Search lessons, parts, code words…"><kbd>ESC</kbd></div><div class="kres" id="kres"></div></div></div>
+<button id="agFab" aria-label="Ask Instructor" title="Ask Instructor"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><rect x="4" y="8" width="16" height="12" rx="4"/><path d="M12 4v4M9 13.5h.01M15 13.5h.01M9.5 17h5"/></svg><span class="fab-x">×</span><i class="dot"></i></button>
+<div class="toast" id="toast"></div>
+<script src="sim.js"></script>
+<script src="parts.js"></script>
+<script src="art.js"></script>
+<script src="syntax.js"></script>
+<script src="course.js"></script><script src="projects.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
