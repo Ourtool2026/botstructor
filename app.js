@@ -40,7 +40,26 @@ async function askJSON(prompt,opts={}){if(!S.sample)throw new Error('offline');
   return await S.sample.json([{role:'user',content:prompt}],{modelTier:'default',cache:false,...opts})}
 
 /* ---------- voice ---------- */
-let speakingEl=null;
+let speakingEl=null, speakId=0, VOICES=[];
+function loadVoices(){try{VOICES=speechSynthesis.getVoices()||[]}catch(e){VOICES=[]}}
+try{loadVoices(); speechSynthesis.addEventListener('voiceschanged',loadVoices)}catch(e){}
+/* Rank the device's voices so a natural-sounding one wins over the old robotic defaults. */
+function voiceScore(v,bn){
+  const n=((v.name||'')+' '+(v.voiceURI||'')).toLowerCase(), l=(v.lang||'').toLowerCase().replace('_','-');
+  if(!l.startsWith(bn?'bn':'en'))return -1;
+  let s=1;
+  if(/natural|neural|online/.test(n))s+=60;          // Edge / Windows 11 neural voices
+  if(/premium|enhanced|siri/.test(n))s+=45;          // Apple high-quality voices
+  if(/google/.test(n))s+=30;                         // Chrome / Android network voices
+  if(/samantha|ava|allison|susan|serena|karen|daniel|moira|tessa|aria|jenny|guy|sonia|libby|emma|brian|andrew|nabanita|pradeep|tanishaa|bashkar/.test(n))s+=15;
+  if(/espeak|robot|zarvox|trinoids|whisper|bad news|good news|bells|boing|bubbles|cellos|albert|fred|junior|ralph|jester|organ|superstar|wobble|grandma|grandpa|eddy|flo\b|reed|rocko|sandy|shelley/.test(n))s-=80;
+  if(/microsoft (david|zira|mark|hazel|george|heera|ravi)\b/.test(n)&&!/online|natural/.test(n))s-=10; // old Windows voices
+  if(bn?l==='bn-bd':l==='en-us')s+=8; else if(!bn&&/en-(gb|au|ca|in|ie|nz)/.test(l))s+=4;
+  if(v.localService===false)s+=5;
+  return s}
+function bestVoice(bn){if(!VOICES.length)loadVoices(); let b=null,bs=0; for(const v of VOICES){const s=voiceScore(v,bn); if(s>bs){bs=s;b=v}} return b}
+/* Speak sentence by sentence: natural pauses, and Chrome's network voices don't cut off on long text. */
+function chunks(text){const out=[]; for(const p of text.split(/(?<=[.!?।…])\s+|\n+/)){let s=p.trim(); while(s.length>220){let k=s.lastIndexOf(', ',220); if(k<80)k=s.lastIndexOf(' ',220); if(k<1)k=220; out.push(s.slice(0,k+1).trim()); s=s.slice(k+1).trim()} if(s)out.push(s)} return out}
 function speak(text,btn){return new Promise(res=>speak0(text,btn,res))}
 async function speak0(text,btn,res){
   if(btn&&speakingEl===btn){stopSpeak();res();return}
@@ -49,7 +68,11 @@ async function speak0(text,btn,res){
   const done=()=>{res&&res(); res=null; $('#agent').classList.remove('speaking'); if(btn&&speakingEl===btn){btn.classList.remove('play'); btn.innerHTML=btn._l; speakingEl=null}};
   const clean=String(text).replace(/[`*#•]/g,'').replace(/→/g,BN()?' তারপর ':' to ').slice(0,1800);
   try{ if(S.tts){await S.tts.speak(clean,{language:BN()?'bn':'en'}); done(); return} }catch(e){ if(e&&/stop/.test(e.code||''))return done() }
-  try{ const u=new SpeechSynthesisUtterance(clean); u.lang=BN()?'bn-BD':'en-US'; u.rate=BN()?0.92:1; const v=speechSynthesis.getVoices().find(v=>v.lang.toLowerCase().startsWith(BN()?'bn':'en')); if(v)u.voice=v; u.onend=done; u.onerror=done; speechSynthesis.speak(u)}catch(e){done()}
+  try{ const bn=BN(), v=bestVoice(bn), id=++speakId, parts=chunks(clean.replace(/https?:\/\/\S+/g,'').replace(/[\u{1F300}-\u{1FAFF}☀-➿]/gu,''));
+    if(!parts.length)return done();
+    parts.forEach((p,i)=>{const u=new SpeechSynthesisUtterance(p); u.lang=v?v.lang:(bn?'bn-BD':'en-US'); if(v)u.voice=v; u.rate=bn?0.95:1; u.pitch=1;
+      const fin=()=>{if(id===speakId)done()}; if(i===parts.length-1)u.onend=fin; u.onerror=e=>{if(!e||e.error!=='interrupted')fin()}; speechSynthesis.speak(u)})
+  }catch(e){done()}
 }
 function stopSpeak(){try{window.speechSynthesis&&speechSynthesis.cancel()}catch(e){}try{S.tts&&S.tts.stop()}catch(e){} try{speechSynthesis.cancel()}catch(e){} $('#agent').classList.remove('speaking'); if(speakingEl){speakingEl.classList.remove('play'); speakingEl.innerHTML=speakingEl._l||I(IC.vol,13)+' '+t('listen'); speakingEl=null}}
 function toast(m){const e=$('#toast'); e.textContent=m; e.classList.add('show'); clearTimeout(e._t); e._t=setTimeout(()=>e.classList.remove('show'),2600)}
