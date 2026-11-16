@@ -1,0 +1,4 @@
+kokoro.web.js is the browser build of kokoro-js 1.2.1 (https://www.npmjs.com/package/kokoro-js),
+licensed under the Apache License 2.0. It bundles Transformers.js (Apache-2.0) and phonemizer.
+The Kokoro-82M voice model (https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX) is
+licensed under the Apache License 2.0 and is downloaded by the visitor's browser at runtime.

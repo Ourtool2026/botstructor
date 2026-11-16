@@ -66,13 +66,30 @@ let curAudio=null, curDone=null;
 async function ttsFetch(text,bn){const r=await fetch('/api/tts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text,lang:bn?'bn':'en'})}); if(!r.ok)throw new Error('tts '+r.status); return URL.createObjectURL(await r.blob())}
 function ttsGroups(parts,max=450){if(!parts.length)return []; const out=[parts[0]]; let cur=''; for(const p of parts.slice(1)){if(cur&&(cur+' '+p).length>max){out.push(cur); cur=p} else cur=cur?cur+' '+p:p} if(cur)out.push(cur); return out}
 function playUrl(url){return new Promise(r=>{const a=new Audio(url); curAudio={stop:()=>{a.pause(); r('stopped')}}; a.onended=()=>r('ended'); a.onerror=()=>r('error'); a.play().catch(()=>r('error'))})}
+/* Free natural English voice: Kokoro-82M (Apache-2.0) running inside the visitor's browser. No key, no server.
+   Loaded once (~90 MB, then cached) on computers; phones, data-saver and slow connections keep the device voice. */
+const KOK={w:null,state:'off',n:0,wait:{}};
+function kokoroOK(){try{const c=navigator.connection||{}; if(c.saveData||/2g|3g/.test(c.effectiveType||''))return false;
+  if(matchMedia('(pointer:coarse)').matches)return false; if((navigator.deviceMemory||8)<4||(navigator.hardwareConcurrency||4)<4)return false;
+  return typeof Worker!=='undefined'&&typeof WebAssembly!=='undefined'}catch(e){return false}}
+function kokoroFail(){KOK.state='failed'; for(const k in KOK.wait)KOK.wait[k].no(new Error('kokoro')); KOK.wait={}; try{KOK.w&&KOK.w.terminate()}catch(e){} KOK.w=null}
+function kokoroStart(){if(KOK.state!=='off'||!kokoroOK())return; KOK.state='loading';
+  try{const w=new Worker('vendor/kokoro-worker.js',{type:'module'}); KOK.w=w;
+    w.onmessage=e=>{const m=e.data||{};
+      if(m.type==='ready'){KOK.state='ready'; toast(BN()?'স্বাভাবিক ইংরেজি ভয়েস তৈরি':'Natural voice ready')}
+      else if(m.type==='error')kokoroFail();
+      else if(m.type==='audio'){const p=KOK.wait[m.id]; delete KOK.wait[m.id]; if(p)m.error?p.no(new Error(m.error)):p.ok(URL.createObjectURL(new Blob([m.wav],{type:'audio/wav'})))}};
+    w.onerror=kokoroFail; w.postMessage({type:'load'});
+    toast(BN()?'বিনামূল্যে স্বাভাবিক ভয়েস নামানো হচ্ছে (একবার, প্রায় ৯০ MB)…':'Getting a free natural voice ready (one-time download, about 90 MB)…')
+  }catch(e){kokoroFail()}}
+function kokoroFetch(text){return new Promise((ok,no)=>{if(!KOK.w)return no(new Error('kokoro')); const id=++KOK.n; KOK.wait[id]={ok,no}; KOK.w.postMessage({type:'speak',id,text,voice:'af_heart'})})}
 /* Returns true if it spoke (or was stopped), false if nothing could be played so the caller should fall back. */
-async function cloudSpeak(parts,bn,id){
-  const groups=ttsGroups(parts); let next=ttsFetch(groups[0],bn), played=false;
+async function cloudSpeak(parts,bn,id,get=ttsFetch){
+  const groups=ttsGroups(parts); let next=get(groups[0],bn), played=false;
   for(let i=0;i<groups.length;i++){
     let url; try{url=await next}catch(e){return played}
     if(id!==speakId){URL.revokeObjectURL(url); return true}
-    next=i+1<groups.length?ttsFetch(groups[i+1],bn):null; if(next)next.catch(()=>{});
+    next=i+1<groups.length?get(groups[i+1],bn):null; if(next)next.catch(()=>{});
     const how=await playUrl(url); curAudio=null; URL.revokeObjectURL(url);
     if(how==='stopped'||id!==speakId)return true;
     if(how==='error')return played;
@@ -91,6 +108,7 @@ async function speak0(text,btn,res){
   const bn=BN(), parts=chunks(clean.replace(/https?:\/\/\S+/g,'').replace(/[\u{1F300}-\u{1FAFF}☀-➿]/gu,''));
   if(!parts.length)return done();
   if(S.cloudTts){ if(await cloudSpeak(parts,bn,id))return done(); if(id!==speakId)return done() }
+  else if(!bn){ kokoroStart(); if(KOK.state==='ready'){ if(await cloudSpeak(parts,bn,id,kokoroFetch))return done(); if(id!==speakId)return done() } }
   try{ const v=bestVoice(bn);
     parts.forEach((p,i)=>{const u=new SpeechSynthesisUtterance(p); u.lang=v?v.lang:(bn?'bn-BD':'en-US'); if(v)u.voice=v; u.rate=bn?0.95:1; u.pitch=1;
       const fin=()=>{if(id===speakId)done()}; if(i===parts.length-1)u.onend=fin; u.onerror=e=>{if(!e||e.error!=='interrupted')fin()}; speechSynthesis.speak(u)})
