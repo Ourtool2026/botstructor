@@ -60,21 +60,44 @@ function voiceScore(v,bn){
 function bestVoice(bn){if(!VOICES.length)loadVoices(); let b=null,bs=0; for(const v of VOICES){const s=voiceScore(v,bn); if(s>bs){bs=s;b=v}} return b}
 /* Speak sentence by sentence: natural pauses, and Chrome's network voices don't cut off on long text. */
 function chunks(text){const out=[]; for(const p of text.split(/(?<=[.!?।…])\s+|\n+/)){let s=p.trim(); while(s.length>220){let k=s.lastIndexOf(', ',220); if(k<80)k=s.lastIndexOf(' ',220); if(k<1)k=220; out.push(s.slice(0,k+1).trim()); s=s.slice(k+1).trim()} if(s)out.push(s)} return out}
+/* Natural cloud voice (Azure Speech via /api/tts). The first sentence is sent alone so speech starts fast;
+   the rest is fetched in bigger pieces while the previous one plays. */
+let curAudio=null, curDone=null;
+async function ttsFetch(text,bn){const r=await fetch('/api/tts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text,lang:bn?'bn':'en'})}); if(!r.ok)throw new Error('tts '+r.status); return URL.createObjectURL(await r.blob())}
+function ttsGroups(parts,max=450){if(!parts.length)return []; const out=[parts[0]]; let cur=''; for(const p of parts.slice(1)){if(cur&&(cur+' '+p).length>max){out.push(cur); cur=p} else cur=cur?cur+' '+p:p} if(cur)out.push(cur); return out}
+function playUrl(url){return new Promise(r=>{const a=new Audio(url); curAudio={stop:()=>{a.pause(); r('stopped')}}; a.onended=()=>r('ended'); a.onerror=()=>r('error'); a.play().catch(()=>r('error'))})}
+/* Returns true if it spoke (or was stopped), false if nothing could be played so the caller should fall back. */
+async function cloudSpeak(parts,bn,id){
+  const groups=ttsGroups(parts); let next=ttsFetch(groups[0],bn), played=false;
+  for(let i=0;i<groups.length;i++){
+    let url; try{url=await next}catch(e){return played}
+    if(id!==speakId){URL.revokeObjectURL(url); return true}
+    next=i+1<groups.length?ttsFetch(groups[i+1],bn):null; if(next)next.catch(()=>{});
+    const how=await playUrl(url); curAudio=null; URL.revokeObjectURL(url);
+    if(how==='stopped'||id!==speakId)return true;
+    if(how==='error')return played;
+    played=true}
+  return true}
 function speak(text,btn){return new Promise(res=>speak0(text,btn,res))}
 async function speak0(text,btn,res){
   if(btn&&speakingEl===btn){stopSpeak();res();return}
   stopSpeak(); speakingEl=btn||null; if(btn){btn.classList.add('play'); btn._l=btn.innerHTML; btn.innerHTML=I(IC.sq,13)+' '+t('stop')}
   $('#agent').classList.add('speaking');
-  const done=()=>{res&&res(); res=null; $('#agent').classList.remove('speaking'); if(btn&&speakingEl===btn){btn.classList.remove('play'); btn.innerHTML=btn._l; speakingEl=null}};
+  const id=++speakId;
+  const done=()=>{if(curDone===done)curDone=null; res&&res(); res=null; if(id!==speakId)return; $('#agent').classList.remove('speaking'); if(btn&&speakingEl===btn){btn.classList.remove('play'); btn.innerHTML=btn._l; speakingEl=null}};
+  curDone=done;
   const clean=String(text).replace(/[`*#•]/g,'').replace(/→/g,BN()?' তারপর ':' to ').slice(0,1800);
   try{ if(S.tts){await S.tts.speak(clean,{language:BN()?'bn':'en'}); done(); return} }catch(e){ if(e&&/stop/.test(e.code||''))return done() }
-  try{ const bn=BN(), v=bestVoice(bn), id=++speakId, parts=chunks(clean.replace(/https?:\/\/\S+/g,'').replace(/[\u{1F300}-\u{1FAFF}☀-➿]/gu,''));
-    if(!parts.length)return done();
+  const bn=BN(), parts=chunks(clean.replace(/https?:\/\/\S+/g,'').replace(/[\u{1F300}-\u{1FAFF}☀-➿]/gu,''));
+  if(!parts.length)return done();
+  if(S.cloudTts){ if(await cloudSpeak(parts,bn,id))return done(); if(id!==speakId)return done() }
+  try{ const v=bestVoice(bn);
     parts.forEach((p,i)=>{const u=new SpeechSynthesisUtterance(p); u.lang=v?v.lang:(bn?'bn-BD':'en-US'); if(v)u.voice=v; u.rate=bn?0.95:1; u.pitch=1;
       const fin=()=>{if(id===speakId)done()}; if(i===parts.length-1)u.onend=fin; u.onerror=e=>{if(!e||e.error!=='interrupted')fin()}; speechSynthesis.speak(u)})
   }catch(e){done()}
 }
-function stopSpeak(){try{window.speechSynthesis&&speechSynthesis.cancel()}catch(e){}try{S.tts&&S.tts.stop()}catch(e){} try{speechSynthesis.cancel()}catch(e){} $('#agent').classList.remove('speaking'); if(speakingEl){speakingEl.classList.remove('play'); speakingEl.innerHTML=speakingEl._l||I(IC.vol,13)+' '+t('listen'); speakingEl=null}}
+function stopSpeak(){speakId++; try{curAudio&&curAudio.stop()}catch(e){} curAudio=null; const d=curDone; curDone=null; try{d&&d()}catch(e){}
+  try{window.speechSynthesis&&speechSynthesis.cancel()}catch(e){}try{S.tts&&S.tts.stop()}catch(e){} try{speechSynthesis.cancel()}catch(e){} $('#agent').classList.remove('speaking'); if(speakingEl){speakingEl.classList.remove('play'); speakingEl.innerHTML=speakingEl._l||I(IC.vol,13)+' '+t('listen'); speakingEl=null}}
 function toast(m){const e=$('#toast'); e.textContent=m; e.classList.add('show'); clearTimeout(e._t); e._t=setTimeout(()=>e.classList.remove('show'),2600)}
 const listenBtn=(id)=>`<button class="pill-btn" id="${id}">${I(IC.vol,13)} ${t('listen')}</button>`;
 
@@ -826,6 +849,7 @@ async function claudeApiSample(){
 async function boot(){
   bind(); renderUser();
   if(!(P.user&&P.user.onboarded))renderAuth(); else render();
+  fetch('/api/tts',{cache:'no-store'}).then(r=>r.ok?r.json():null).then(j=>{S.cloudTts=!!(j&&j.ready)}).catch(()=>{});
   const api=await claudeApiSample();
   if(api){S.sample=api; S.imgs=true; $('#aiState').classList.add('live'); $('#aiTxt').textContent='AI live'}
   else for(let i=0;i<40&&!(window.claude&&window.claude.use);i++)await new Promise(r=>setTimeout(r,250));
