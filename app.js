@@ -786,11 +786,27 @@ function bind(){
   $('#kq').oninput=e=>drawK(e.target.value); $('#kpal').onclick=e=>{if(e.target.id==='kpal')closeK()};
   bubble(BN()?'হাই! আমি তোমার AI ইন্সট্রাক্টর, তোমার AI রোবটিক্স এজেন্ট। প্রতিটা ধাপে পাশে আছি: মাইক চেপে বলো বা লিখে জিজ্ঞেস করো।':"Hi! I'm your AI instructor. I'm with you at every step: tap the mic and talk, or type a question.",'bot');
 }
+/* Claude API via this site's own /api/claude function (Vercel). Same shape as the claude.ai `sample` capability. */
+async function claudeApiSample(){
+  try{const r=await fetch('/api/claude',{cache:'no-store'}); if(!r.ok)return null; const j=await r.json(); if(!j||!j.ready)return null}catch(e){return null}
+  const toB64=b=>new Promise((ok,no)=>{const fr=new FileReader(); fr.onload=()=>{const s=String(fr.result); ok({media_type:s.slice(5,s.indexOf(';')),data:s.slice(s.indexOf(',')+1)})}; fr.onerror=()=>no(fr.error); fr.readAsDataURL(b)});
+  const call=async(msgs,opts={})=>{
+    const prompt=msgs.map(m=>typeof m.content==='string'?m.content:'').join('\n\n');
+    const images=opts.images?await Promise.all(opts.images.map(toB64)):[];
+    const r=await fetch('/api/claude',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt,images,quick:opts.modelTier==='quick'})});
+    const j=await r.json().catch(()=>({})); if(!r.ok||j.error)throw new Error(j.error||('HTTP '+r.status)); return {text:j.text||''}};
+  const s=(msgs,opts)=>call(msgs,opts);
+  s.json=async(msgs,opts)=>{const r=await call(msgs,opts); const m=(r.text||'').match(/\{[\s\S]*\}/); if(!m)throw new Error('bad json'); return JSON.parse(m[0])};
+  s.limits=async()=>({images:true});
+  return s;
+}
 async function boot(){
   bind(); renderUser();
   if(!(P.user&&P.user.onboarded))renderAuth(); else render();
-  for(let i=0;i<40&&!(window.claude&&window.claude.use);i++)await new Promise(r=>setTimeout(r,250));
-  try{if(window.claude&&window.claude.use){const [s,tt]=await Promise.all([window.claude.use('sample'),window.claude.use('tts')]); S.sample=s; S.tts=tt;
+  const api=await claudeApiSample();
+  if(api){S.sample=api; S.imgs=true; $('#aiState').classList.add('live'); $('#aiTxt').textContent='AI live'}
+  else for(let i=0;i<40&&!(window.claude&&window.claude.use);i++)await new Promise(r=>setTimeout(r,250));
+  try{if(!api&&window.claude&&window.claude.use){const [s,tt]=await Promise.all([window.claude.use('sample'),window.claude.use('tts')]); S.sample=s; S.tts=tt;
     if(s){try{const lim=await s.limits(); S.imgs=!!(lim&&lim.images)}catch(e){S.imgs=false} $('#aiState').classList.add('live'); $('#aiTxt').textContent='AI live'}}}catch(e){}
   if(!S.sample)$('#aiTxt').textContent='AI offline';
   $('#agSub').textContent=S.sample?(BN()?'অনলাইন · কথা শুনি আর ছবি দেখি':'Online · hears you and sees photos'):(BN()?'অফলাইন মোড · তবুও সাহায্য করবো':'Offline mode · built-in help');
