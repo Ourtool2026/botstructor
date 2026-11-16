@@ -227,6 +227,7 @@ class Sim{
         else if(t==='motor'){ctx.motor(nn('a'),nn('b'),10)}
         else if(t==='led'){ctx.diode(c.id,nn('A'),nn('K'),1.9,true)}
         else if(t==='esp32'){const g=nn('GND'); src(nn('3V3'),g,3.3,1); src(nn('VIN'),g,5,3);
+          els.push({c,kind:'sup',pin:'3V3',p:nn('3V3'),q:g,V:3.3,R:1},{c,kind:'sup',pin:'VIN',p:nn('VIN'),q:g,V:5,R:3});
           for(const pin of [...ESP_L,...ESP_R]){const gp=gpioOf(pin); if(gp===null)continue; const st=gpio[gp]; if(!st)continue;
             if(st.mode==='OUTPUT'){const V=st.duty!==undefined?3.3*st.duty:(st.level?3.3:0); src(nn(pin),g,V,25)} else if(st.mode==='INPUT_PULLUP')src(nn(pin),g,3.3,45000)}}
         else if(t==='l298n'){if(extra.drv&&extra.drv[c.id]){const d=extra.drv[c.id], g=nn('GND'); src(nn('5V'),g,5,2);
@@ -250,7 +251,8 @@ class Sim{
       run(res.V)}
     const out={motors:[],leds:[],loads:[],warnings:[],drv};
     for(const e of res.els){const vd=res.V[e.p]-res.V[e.q];
-      if(e.kind==='bat'){const I=(e.V-vd)/e.R; if(I>3)out.warnings.push({type:'short',msg:'Short circuit! The battery + and − are connected with nothing in between. Unplug and fix it.'})}
+      if(e.kind==='bat'){const I=(e.V-vd)/e.R; if(I>3)out.warnings.push({type:'short',msg:'Short circuit! The battery + and − are connected with nothing in between. Unplug and fix it.',at:[[e.c.id,'+'],[e.c.id,'-']]})}
+      if(e.kind==='sup'){const I=(e.V-vd)/e.R; if(I>1)out.warnings.push({type:'short',msg:`Short circuit! The ESP32 ${e.pin} pin is connected straight to GND. Unplug it before the board gets hot.`,at:[[e.c.id,e.pin],[e.c.id,'GND']]})}
       if(e.kind==='motor'){const spin=Math.abs(vd)>0.7; out.motors.push({id:e.c.id,v:vd,spinning:spin,dir:spin?Math.sign(vd):0})}
       if(e.kind==='load'){out.loads.push({id:e.c.id,v:vd,active:Math.abs(vd)>=e.thr})}
       if(e.kind==='led'){const on0=ledOn[e.key]??true; const I=on0?(vd-e.vf)/20:0; const on=I>0.0006; out.leds.push({id:e.c.id,key:e.key,on,I,light:e.light,reversed:!on&&vd<-1.8});
@@ -293,10 +295,36 @@ class Sim{
       el('path',{d,stroke:w.color,'stroke-width':s?6:4.5,fill:'none','stroke-linecap':'round','data-wire':w.id,class:'wire'},wg);
       el('circle',{cx:a.x,cy:a.y,r:3.5,fill:w.color},wg); el('circle',{cx:b.x,cy:b.y,r:3.5,fill:w.color},wg);
       if(s&&w.pts)w.pts.forEach((p,i)=>{const h=el('circle',{cx:p.x,cy:p.y,r:6,fill:'#0b0b0c',stroke:w.color,'stroke-width':2.5,'data-anchor':w.id,'data-i':i,class:'anchor'},wg); h.addEventListener('dblclick',()=>{w.pts.splice(i,1); this.changed()})})}
+    this.placeSparks(svg,R,wg);
     if(this.tags!==false){const tg=el('g',{class:'tags','pointer-events':'none'},svg); for(const c of this.comps){if(c.type==='breadboard')continue; const L=LIB[c.type]; let my=L.h; for(const p in L.pins)my=Math.max(my,L.pins[p][1]+5); if(c._bb&&!c.rot)my=Math.max(my,c._bb.y+c._bb.h); const nm=L.name.replace(/\s*\(.*\)/,''); const w=nm.length*5.6+14, x=c.x+L.w/2, y=c.y+my+6; el('rect',{x:x-w/2,y,width:w,height:15,rx:7.5,fill:'#000000cc',stroke:'#ffffff26'},tg); const t=el('text',{x,y:y+10.5,'text-anchor':'middle','font-size':9.5,'font-weight':600,fill:'#E8EAF0','font-family':'Geist,Inter,sans-serif'},tg); t.textContent=nm}}
     if(this.pending)this.drawRubber();
     this.renderStatus(); if(this._propsFor!==(this.sel&&this.sel.c)){this._propsFor=this.sel&&this.sel.c; this.showProps()}
   }
+  /* ---------- short circuit: fire + sparks at the shorted pins and along the wires carrying the short ---------- */
+  placeSparks(svg,R,wg){
+    this.sparkPts=[]; const sh=((R&&R.warnings)||[]).filter(w=>w.type==='short'&&w.at); if(!sh.length){this.sparks=[]; return}
+    const N=this.nets(), root=(cid,p)=>N.f(N.key(cid,p)), seen=new Set();
+    const add=(x,y,k)=>{const key=Math.round(x/6)+','+Math.round(y/6); if(seen.has(key)||this.sparkPts.length>=10)return; seen.add(key); this.sparkPts.push({x,y,k,ph:Math.random()*6})};
+    for(const w of sh){const roots=new Set();
+      for(const [cid,p] of w.at){const c=this.comp(cid); if(!c)continue; const q=this.pinPos(c,p); if(q)add(q.x,q.y,1); roots.add(root(cid,p))}
+      for(const wr of this.wires){if(!roots.has(root(wr.a.c,wr.a.p))||!roots.has(root(wr.b.c,wr.b.p)))continue;
+        const path=wg.querySelector(`[data-wire="${wr.id}"]`); try{const L=path.getTotalLength(), m=path.getPointAtLength(L/2); add(m.x,m.y,.7)}catch(e){}}}
+    el('g',{class:'sparks','pointer-events':'none'},svg); if(!this.sparks)this.sparks=[]; this.sparkTick(0,performance.now())}
+  sparkTick(dt,t){const g=this.svg.querySelector('.sparks'); if(!g)return; g.innerHTML='';
+    let still=false; try{still=matchMedia('(prefers-reduced-motion: reduce)').matches}catch(e){}
+    const P=this.sparks||[];
+    if(!still)for(const s of this.sparkPts){const n=(Math.random()<dt*40*s.k?1:0)+(Math.random()<dt*2.5?7:0);
+      for(let i=0;i<n;i++){const a=-Math.PI/2+(Math.random()-.5)*2.8, v=70+Math.random()*190; P.push({x:s.x,y:s.y-2,vx:Math.cos(a)*v,vy:Math.sin(a)*v,life:0,max:.25+Math.random()*.5})}}
+    for(const p of P){p.life+=dt; p.vy+=480*dt; p.x+=p.vx*dt; p.y+=p.vy*dt}
+    this.sparks=P.filter(p=>p.life<p.max).slice(-180);
+    const T=t/1000;
+    for(const s of this.sparkPts){const fl=still?1:.8+.25*Math.sin(T*23+s.ph)+.15*Math.random(), k=s.k, x=s.x, y=s.y;
+      el('circle',{cx:x,cy:y,r:26*k*fl,fill:'#FF4A12',opacity:.55,filter:'url(#blur)'},g);
+      const sway=still?0:3*k*Math.sin(T*9+s.ph), flame=(h,w,col,op)=>el('path',{d:`M${x+sway} ${y-h} C ${x+w} ${y-h*.45}, ${x+w*.85} ${y}, ${x} ${y+2} C ${x-w*.85} ${y}, ${x-w} ${y-h*.45}, ${x+sway} ${y-h} Z`,fill:col,opacity:op},g);
+      flame(34*k*fl,11.5*k,'#FF5A1F',.9); flame(22*k*fl,7.5*k,'#FFB020',.95); flame(12*k*fl,4.5*k,'#FFF3B0',1);
+      el('circle',{cx:x,cy:y,r:3.2*k,fill:'#FFFFFF'},g)}
+    for(const p of this.sparks){const q=p.life/p.max, col=q<.3?'#FFFBE6':q<.6?'#FFD23F':'#FF6A1A';
+      el('line',{x1:p.x,y1:p.y,x2:p.x-p.vx*.03,y2:p.y-p.vy*.03,stroke:col,'stroke-width':2.4*(1-q)+.5,'stroke-linecap':'round',opacity:1-q*.6},g)}}
   drawRubber(){let r=this.svg.querySelector('.rubber'); const c=this.comp(this.pending.c); const a=this.pinPos(c,this.pending.p); if(!a||!this.ptr)return;
     if(!r){r=el('path',{class:'rubber',stroke:this.wireColor,'stroke-width':4,'stroke-dasharray':'6 5',fill:'none','pointer-events':'none'},this.svg)}
     const pts=this.pending.pts||[]; r.setAttribute('d',(pts.length?roundPath([a,...pts],10):`M${a.x} ${a.y}`)+` L${this.ptr.x} ${this.ptr.y}`);
@@ -309,6 +337,7 @@ class Sim{
   frame(t){const dt=Math.min(0.05,(t-this.last)/1000); this.last=t;
     if(this.runner)this.runner.tick(t);
     if(this.result)for(const m of this.result.motors){if(!m.spinning)continue; const c=this.comp(m.id); if(!c)continue; c.angle=((c.angle||0)+m.v*dt*180)%360; const g=this.svg.querySelector(`[data-comp="${c.id}"] .rotor`); if(g)g.setAttribute('transform',`rotate(${c.angle} ${g.dataset.cx||42} ${g.dataset.cy||42})`)}
+    if(this.sparkPts&&this.sparkPts.length)this.sparkTick(dt,t);
     if(this.host.isConnected)this.raf=requestAnimationFrame(this.frame.bind(this));}
   destroy(){cancelAnimationFrame(this.raf); document.removeEventListener('keydown',this.keyH); if(this.runner)this.runner.stop()}
   load(state){this.comps=state.comps.map(c=>({...c})); this.wires=state.wires.map(w=>({...w,a:{...w.a},b:{...w.b},...(w.pts?{pts:w.pts.map(p=>({...p}))}:{})})); this.nid=1+Math.max(0,...this.comps.map(c=>+c.id.slice(1)),...this.wires.map(w=>+w.id.slice(1))); this.changed()}
